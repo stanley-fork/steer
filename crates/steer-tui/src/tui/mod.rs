@@ -24,7 +24,7 @@ use crate::tui::update::UpdateStatus;
 use crate::error::{Error, Result};
 use crate::notifications::{NotificationManager, NotificationManagerHandle};
 use crate::tui::commands::registry::CommandRegistry;
-use crate::tui::model::{ChatItem, NoticeLevel, TuiCommandResponse};
+use crate::tui::model::{NoticeLevel, TuiCommandResponse};
 use crate::tui::theme::Theme;
 use futures::{FutureExt, StreamExt};
 use image::ImageFormat;
@@ -292,7 +292,6 @@ use crate::tui::state::RemoteProviderRegistry;
 use crate::tui::state::SetupState;
 use crate::tui::state::{ChatStore, LlmUsageState, ToolCallRegistry};
 
-use crate::tui::chat_viewport::ChatViewport;
 use crate::tui::terminal::{SetupGuard, cleanup};
 use crate::tui::ui_layout::UiLayout;
 use crate::tui::widgets::EditSelectionOverlayState;
@@ -310,6 +309,7 @@ pub mod theme;
 pub mod widgets;
 
 mod chat_viewport;
+pub use chat_viewport::ChatViewport;
 pub mod core_commands;
 mod events;
 mod handlers;
@@ -1643,9 +1643,6 @@ impl Tui {
                 self.last_revision = current_revision;
             }
 
-            // Get chat items from the chat store
-            let chat_items: Vec<&ChatItem> = self.chat_store.as_items();
-
             let terminal_size = f.area();
 
             let queue_preview = self.queued_head.as_ref().map(|item| item.content.as_str());
@@ -1659,8 +1656,7 @@ impl Tui {
             let layout = UiLayout::compute(terminal_size, input_area_height, &self.theme);
             layout.prepare_background(f, &self.theme);
 
-            self.chat_viewport.rebuild(
-                &chat_items,
+            self.chat_viewport.rebuild_from_store(
                 layout.chat.width,
                 self.chat_viewport.state().view_mode,
                 &self.theme,
@@ -1668,8 +1664,7 @@ impl Tui {
                 editing_message_id.as_deref(),
             );
 
-            self.chat_viewport
-                .render(f, layout.chat, spinner_state, None, &self.theme);
+            self.chat_viewport.render(f, layout.chat, &self.theme);
 
             let input_panel = InputPanel::new(InputPanelParams {
                 input_mode,
@@ -2083,6 +2078,7 @@ impl Tui {
                             match loader.load_theme(&name) {
                                 Ok(new_theme) => {
                                     self.theme = new_theme;
+                                    self.chat_viewport.mark_dirty();
                                     self.push_tui_response(
                                         TuiCommandType::Theme.command_name(),
                                         TuiCommandResponse::Theme { name: name.clone() },
